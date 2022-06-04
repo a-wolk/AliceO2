@@ -21,6 +21,8 @@
 #include "Framework/FairMQDeviceProxy.h"
 #include "Headers/DataHeader.h"
 #include "Headers/DataHeaderHelpers.h"
+#include "Framework/DataInspector.h"
+#include "Framework/RawDeviceService.h"
 
 #include <Monitoring/Monitoring.h>
 #include <fairmq/Parts.h>
@@ -55,6 +57,11 @@ void DataProcessor::doSend(DataSender& sender, MessageContext& context, ServiceR
     if (parts.Size() == 0) {
       continue;
     }
+
+    auto device = services.get<RawDeviceService>().device();
+    if(isDataInspectorActive(*device)){
+        sendCopyToDataInspector(*device, parts, 0);
+    }
     sender.send(parts, {ci});
   }
 }
@@ -75,6 +82,11 @@ void DataProcessor::doSend(DataSender& sender, StringContext& context, ServiceRe
     dh->payloadSize = payload->GetSize();
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
+
+    auto device = services.get<RawDeviceService>().device();
+    if(isDataInspectorActive(*device)){
+        sendCopyToDataInspector(*device, parts, 0);
+    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
 }
@@ -116,6 +128,11 @@ void DataProcessor::doSend(DataSender& sender, ArrowContext& context, ServiceReg
     context.updateMessagesSent(1);
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
+
+    auto device = registry.get<RawDeviceService>().device();
+    if(isDataInspectorActive(*device)){
+        sendCopyToDataInspector(*device, parts, 0);
+    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
   static int64_t previousBytesSent = 0;
@@ -165,6 +182,11 @@ void DataProcessor::doSend(DataSender& sender, RawBufferContext& context, Servic
     dh->payloadSize = size;
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
+
+    auto device = registry.get<RawDeviceService>().device();
+    if(isDataInspectorActive(*device)){
+        sendCopyToDataInspector(*device, parts, 0);
+    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
 }

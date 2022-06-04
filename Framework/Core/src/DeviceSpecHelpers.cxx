@@ -1018,6 +1018,17 @@ void DeviceSpecHelpers::dataProcessorSpecs2DeviceSpecs(const WorkflowSpec& workf
         break;
       }
     }
+
+    if (device.name == "DataInspector") {
+      device.completionPolicy = CompletionPolicy{
+        "data-inspector-completion",
+        [](DeviceSpec const& device) { return device.name == "DataInspector"; },
+        [](InputSpan const& span) { return CompletionPolicy::CompletionOp::Consume; }};
+      device.dispatchPolicy = {
+        "data-inspector-dispatch",
+        [](DeviceSpec const&) { return true; },
+        DispatchPolicy::DispatchOp::AfterComputation};
+    }
     bool hasPolicy = false;
     for (auto& policy : resourcePolicies) {
       if (policy.matcher(device) == true) {
@@ -1384,7 +1395,7 @@ void DeviceSpecHelpers::prepareArguments(bool defaultQuiet, bool defaultStopped,
             // currently only the simple case is supported
             assert(semantic->min_tokens() <= 1);
             // assert(semantic->max_tokens() && semantic->min_tokens());
-            if (semantic->min_tokens() > 0) {
+            if (semantic->min_tokens() > 0 || varit.first == "inspector") {
               std::string stringRep;
               if (auto v = boost::any_cast<std::string>(&varit.second.value())) {
                 stringRep = *v;
@@ -1526,7 +1537,8 @@ boost::program_options::options_description DeviceSpecHelpers::getForwardedDevic
     ("infologger-mode", bpo::value<std::string>(), "O2_INFOLOGGER_MODE override")                                                                                    //
     ("infologger-severity", bpo::value<std::string>(), "minimun FairLogger severity which goes to info logger")                                                      //
     ("dpl-tracing-flags", bpo::value<std::string>(), "pipe separated list of events to trace")                                                                       //
-    ("child-driver", bpo::value<std::string>(), "external driver to start childs with (e.g. valgrind)");                                                             //
+    ("child-driver", bpo::value<std::string>(), "external driver to start childs with (e.g. valgrind)")
+    ("inspector", bpo::value<std::string>()->implicit_value(""), "add the data inspector custom device and specify devices to inspect");//
 
   return forwardedDeviceOptions;
 }

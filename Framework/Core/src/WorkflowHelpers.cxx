@@ -26,6 +26,7 @@
 #include "Framework/Plugins.h"
 #include "ArrowSupport.h"
 #include "CCDBHelpers.h"
+#include "Framework/DataInspector.h"
 
 #include "Headers/DataHeader.h"
 #include <algorithm>
@@ -798,6 +799,121 @@ void WorkflowHelpers::constructGraph(const WorkflowSpec& workflow,
     }
   };
 
+  // Notice that if the output is actually a forward, we need to store that
+  // information so that when we add it at device level we know which output
+  // channel we need to connect it too.
+  auto hasMatchingOutputFor = [&workflow, &constOutputs,
+                               &availableOutputsInfo, &oif,
+                               &forwardedInputsInfo](size_t ci, size_t ii) {
+    assert(ci < workflow.size());
+    assert(ii < workflow[ci].inputs.size());
+    auto& input = workflow[ci].inputs[ii];
+    auto matcher = [&input, &constOutputs](const LogicalOutputInfo& outputInfo) -> bool {
+      auto& output = constOutputs[outputInfo.outputGlobalIndex];
+      return DataSpecUtils::match(input, output);
+    };
+    oif = std::find_if(availableOutputsInfo.begin(),
+                       availableOutputsInfo.end(),
+                       matcher);
+    if (oif != availableOutputsInfo.end() && oif->forward) {
+      LogicalForwardInfo forward;
+      forward.consumer = ci;
+      forward.inputLocalIndex = ii;
+      forward.outputGlobalIndex = oif->outputGlobalIndex;
+      forwardedInputsInfo.emplace_back(LogicalForwardInfo{ci, ii, oif->outputGlobalIndex});
+    }
+    return oif != availableOutputsInfo.end();
+  };
+
+  // We have consumed the input, therefore we remove it from the list.
+  // We will insert the forwarded inputs only at the end of the iteration.
+  auto findNextOutputFor = [&availableOutputsInfo, &constOutputs, &oif, &workflow](
+                             size_t ci, size_t& ii) {
+    auto& input = workflow[ci].inputs[ii];
+    auto matcher = [&input, &constOutputs](const LogicalOutputInfo& outputInfo) -> bool {
+      auto& output = constOutputs[outputInfo.outputGlobalIndex];
+      return DataSpecUtils::match(input, output);
+    };
+    oif = availableOutputsInfo.erase(oif);
+    oif = std::find_if(oif, availableOutputsInfo.end(), matcher);
+    return oif;
+  };
+
+  auto numberOfInputsFor = [&workflow](size_t ci) {
+    auto& consumer = workflow[ci];
+    return consumer.inputs.size();
+  };
+
+  auto maxInputTimeslicesFor = [&workflow](size_t pi) {
+    auto& processor = workflow[pi];
+    return processor.maxInputTimeslices;
+  };
+
+  // Trivial, but they make reading easier..
+  auto getOutputAssociatedProducer = [&oif]() {
+    return oif->specIndex;
+  };
+
+  // Trivial, but they make reading easier..
+  auto getAssociateOutput = [&oif]() {
+    return oif->outputGlobalIndex;
+  };
+
+  auto isForward = [&oif]() {
+    return oif->forward;
+  };
+
+  // Trivial but makes reasing easier in the outer loop.
+  auto createEdge = [&logicalEdges](size_t producer,
+                                    size_t consumer,
+                                    size_t tpi,
+                                    size_t ptpi,
+                                    size_t uniqueOutputId,
+                                    size_t matchingInputInConsumer,
+                                    bool doForward) {
+    logicalEdges.emplace_back(
+      DeviceConnectionEdge{producer,
+                           consumer,
+                           tpi,
+                           ptpi,
+                           uniqueOutputId,
+                           matchingInputInConsumer,
+                           doForward});
+  };
+
+  auto getOutputToDataInspector = [](const InputSpec& input) {
+    auto matcher = std::get<ConcreteDataMatcher>(input.matcher);
+    OutputLabel label{input.binding};
+    return OutputSpec{label, matcher, input.lifetime};
+  };
+
+  auto createEdgeToDataInspector = [&getOutputToDataInspector,
+            &workflow,
+            &outputs,
+            &maxInputTimeslicesFor,
+            &createEdge](size_t dataInspector,
+                         size_t& uniqueOutputId,
+                         const InputSpec& input,
+                         int& count) {
+    auto matchingOutput = getOutputToDataInspector(input);
+    for (size_t producer = 0; producer < workflow.size(); producer++) {
+      if (!isInspectorDevice(workflow[producer])) {
+        for (const OutputSpec& output : workflow[producer].outputs) {
+          if (output == matchingOutput) {
+            for (size_t tpi = 0; tpi < maxInputTimeslicesFor(dataInspector); ++tpi) {
+              for (size_t ptpi = 0; ptpi < maxInputTimeslicesFor(producer); ++ptpi) {
+                createEdge(producer, dataInspector, tpi, ptpi, uniqueOutputId, count, false);
+                outputs.push_back(output);
+              }
+            }
+            count++;
+            uniqueOutputId++;
+          }
+        }
+      }
+    }
+  };
+
   auto errorDueToMissingOutputFor = [&workflow, &constOutputs](size_t ci, size_t ii) {
     auto input = workflow[ci].inputs[ii];
     std::ostringstream str;
@@ -858,6 +974,41 @@ void WorkflowHelpers::constructGraph(const WorkflowSpec& workflow,
       availableOutputsInfo.erase(std::remove_if(availableOutputsInfo.begin(), availableOutputsInfo.end(), [](auto& info) { return info.enabled == false; }), availableOutputsInfo.end());
       for (auto& forward : forwards) {
         availableOutputsInfo.push_back(forward);
+      }
+    }
+
+    if (isInspectorDevice(workflow[consumer])) {
+      std::vector <size_t> ids(availableOutputsInfo.size());
+      std::transform(std::begin(availableOutputsInfo), std::end(availableOutputsInfo),
+                     std::begin(ids), [](LogicalOutputInfo &i) { return i.outputGlobalIndex; });
+      auto uniqueOutputIdIt = std::max_element(std::begin(ids), std::end(ids));
+      if (uniqueOutputIdIt != std::end(ids)) {
+        size_t uniqueOutputId = *uniqueOutputIdIt + 1;
+        int count = 0;
+        for (const InputSpec &input: workflow[consumer].inputs) {
+          newEdgeBetweenDevices();
+          createEdgeToDataInspector(consumer, uniqueOutputId, input, count);
+        }
+      }
+    } else {
+      for (size_t input = 0; input < numberOfInputsFor(consumer); ++input) {
+        newEdgeBetweenDevices();
+
+        while (hasMatchingOutputFor(consumer, input)) {
+          auto producer = getOutputAssociatedProducer();
+          auto uniqueOutputId = getAssociateOutput();
+          for (size_t tpi = 0; tpi < maxInputTimeslicesFor(consumer); ++tpi) {
+            for (size_t ptpi = 0; ptpi < maxInputTimeslicesFor(producer); ++ptpi) {
+              createEdge(producer, consumer, tpi, ptpi, uniqueOutputId, input, isForward());
+            }
+            forwardOutputFrom(consumer, uniqueOutputId);
+          }
+          findNextOutputFor(consumer, input);
+        }
+        if (noMatchingOutputFound()) {
+          errorDueToMissingOutputFor(consumer, input);
+        }
+        appendForwardsToPossibleOutputs();
       }
     }
   }
