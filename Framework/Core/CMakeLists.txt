@@ -124,6 +124,7 @@ o2_add_library(Framework
                        src/TimesliceIndex.cxx
                        src/DataInputDirector.cxx
                        src/DataOutputDirector.cxx
+                       src/DataInspector.cxx
                        src/Task.cxx
                        src/Array2D.cxx
                        src/Variant.cxx

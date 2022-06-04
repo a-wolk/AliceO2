@@ -47,7 +47,7 @@ RouteIndex DataAllocator::matchDataHeader(const Output& spec, size_t timeslice)
   // FIXME: we should take timeframeId into account as well.
   for (auto ri = 0; ri < mAllowedOutputRoutes.size(); ++ri) {
     auto& route = mAllowedOutputRoutes[ri];
-    if (DataSpecUtils::match(route.matcher, spec.origin, spec.description, spec.subSpec) && ((timeslice % route.maxTimeslices) == route.timeslice)) {
+    if (DataSpecUtils::match(route.matcher, spec.origin, spec.description, spec.subSpec) && ((timeslice % route.maxTimeslices) == route.timeslice) && route.channel.find("to_DataInspector") == std::string::npos) {
       return RouteIndex{ri};
     }
   }

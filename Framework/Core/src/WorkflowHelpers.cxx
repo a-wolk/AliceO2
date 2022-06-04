@@ -26,6 +26,7 @@
 #include "Framework/Plugins.h"
 #include "ArrowSupport.h"
 #include "CCDBHelpers.h"
+#include "Framework/DataInspector.h"
 
 #include "Headers/DataHeader.h"
 #include <algorithm>
@@ -811,6 +812,12 @@ void WorkflowHelpers::constructGraph(const WorkflowSpec& workflow,
     throw std::runtime_error(str.str());
   };
 
+  auto getOutputToDataInspector = [](const InputSpec& input) {
+    auto matcher = std::get<ConcreteDataMatcher>(input.matcher);
+    OutputLabel label{input.binding};
+    return OutputSpec{label, matcher, input.lifetime};
+  };
+
   // This is the outer loop
   //
   // Here we iterate over dataprocessor items in workflow and we consider them
@@ -826,6 +833,39 @@ void WorkflowHelpers::constructGraph(const WorkflowSpec& workflow,
 
   std::vector<bool> matches(constOutputs.size());
   for (size_t consumer = 0; consumer < workflow.size(); ++consumer) {
+    if (isInspectorDevice(workflow[consumer])) {
+      std::vector<size_t> ids(availableOutputsInfo.size());
+      std::transform(std::begin(availableOutputsInfo), std::end(availableOutputsInfo),
+                     std::begin(ids), [](LogicalOutputInfo& i) { return i.outputGlobalIndex; });
+      auto uniqueOutputIdIt = std::max_element(std::begin(ids), std::end(ids));
+
+      if (uniqueOutputIdIt != std::end(ids)) {
+        size_t uniqueOutputId = *uniqueOutputIdIt;
+        for (size_t input = 0; input < workflow[consumer].inputs.size(); ++input) {
+          forwards.clear();
+
+          auto diOutput = getOutputToDataInspector(workflow[consumer].inputs[input]);
+          for (size_t producer = 0; producer < workflow.size(); producer++) {
+            if (!isInspectorDevice(workflow[producer])) {
+              for (const OutputSpec& output : workflow[producer].outputs) {
+                if (output == diOutput) {
+                  for (size_t tpi = 0; tpi < workflow[consumer].maxInputTimeslices; ++tpi) {
+                    for (size_t ptpi = 0; ptpi < workflow[producer].maxInputTimeslices; ++ptpi) {
+                      uniqueOutputId++;
+                      logicalEdges.emplace_back(DeviceConnectionEdge{producer, consumer, tpi, ptpi, uniqueOutputId, input, false});
+                      outputs.emplace_back(output);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      continue;
+    }
+
     for (size_t input = 0; input < workflow[consumer].inputs.size(); ++input) {
       forwards.clear();
       for (size_t i = 0; i < constOutputs.size(); i++) {
