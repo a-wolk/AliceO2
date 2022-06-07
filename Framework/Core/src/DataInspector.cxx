@@ -23,6 +23,7 @@
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
+#include "boost/asio.hpp"
 
 using namespace rapidjson;
 
@@ -33,18 +34,24 @@ class PushSocket
  public:
   PushSocket(const std::string& address)
   {
-    LOG(info) << "DATAINSPECTOR - Connect to " << address;
+    LOG(info) << "PROXY - CONNECT" << address;
+    s.connect(boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 8081));
   }
 
   ~PushSocket() noexcept
   {
-    LOG(info) << "DATAINSPECTOR - Disconnect";
+    LOG(info) << "PROXY - DISCONNECT";
   }
 
   void send(const std::string& message)
   {
-    LOG(info) << "DATAINSPECTOR - Send:\n" << message;
+    LOG(info) << "PROXY - SEND";
+    boost::asio::write(s, boost::asio::buffer(message, message.size()));
   }
+
+private:
+    boost::asio::io_context io_context;
+    boost::asio::ip::tcp::socket s{io_context};
 };
 
 /* Replaces (in place) all occurences of `pattern` in `data` with `substitute`.
