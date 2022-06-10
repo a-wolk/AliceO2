@@ -24,6 +24,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 #include "boost/asio.hpp"
+#include <TBufferJSON.h>
 
 using namespace rapidjson;
 
@@ -45,14 +46,33 @@ class PushSocket
 
   void send(const std::string& message)
   {
-    LOG(info) << "PROXY - SEND";
-    boost::asio::write(s, boost::asio::buffer(message, message.size()));
+    uint64_t size = message.size();
+    LOG(info) << "PROXY - SEND " << size;
+    boost::asio::write(s, boost::asio::buffer(&size, 8));
+    boost::asio::write(s, boost::asio::buffer(message, size));
   }
 
 private:
     boost::asio::io_context io_context;
     boost::asio::ip::tcp::socket s{io_context};
 };
+
+/* Converts the `data` input a string of bytes as two hexadecimal numbers. Adds
+   a 128 offset to deal with negative values. */
+template <typename T>
+static std::string asBytes(const T* data, uint32_t length)
+{
+    if (length == 0) {
+        return "";
+    }
+    std::stringstream buffer;
+    buffer << std::hex << std::setfill('0')
+           << std::setw(2) << static_cast<unsigned>(data[0] + 128);
+    for (uint32_t i = 1; i < length; i++) {
+        buffer << ' ' << std::setw(2) << static_cast<unsigned>(data[i] + 128);
+    }
+    return buffer.str();
+}
 
 /* Replaces (in place) all occurences of `pattern` in `data` with `substitute`.
    `substitute` may be wider than `pattern`. */
@@ -124,10 +144,57 @@ namespace o2::framework
 
   /* Callback which transforms each `DataRef` in `context` to a JSON object and
   sends it on the `socket`. The messages are sent separately. */
-  void sendToProxy(std::shared_ptr <PushSocket> socket, ProcessingContext &context)
+  static void sendToProxy(std::shared_ptr<PushSocket> socket, ProcessingContext& context)
   {
-    for (const DataRef &ref: context.inputs()) {
-      socket->send(std::string{ref.header});
+    DeviceSpec device = context.services().get<RawDeviceService>().spec();
+    for (const DataRef& ref : context.inputs()) {
+      Document message;
+      message.SetObject();
+      Document::AllocatorType& alloc = message.GetAllocator();
+
+      std::string sender = findSenderByRoute(device.inputs, *ref.spec);
+      message.AddMember("sender", Value(sender.c_str(), alloc), alloc);
+
+      const header::BaseHeader* baseHeader = header::BaseHeader::get(reinterpret_cast<const std::byte*>(ref.header));
+      for (; baseHeader != nullptr; baseHeader = baseHeader->next()) {
+        if (baseHeader->description == header::DataHeader::sHeaderType) {
+          const auto* header = header::get<header::DataHeader*>(baseHeader->data());
+          std::string origin = header->dataOrigin.as<std::string>();
+          std::string description = header->dataDescription.as<std::string>();
+          std::string method = header->payloadSerializationMethod.as<std::string>();
+          std::string bytes = asBytes(ref.payload, header->payloadSize);
+
+          message.AddMember("origin", Value(origin.c_str(), alloc), alloc);
+          message.AddMember("description", Value(description.c_str(), alloc), alloc);
+          message.AddMember("subSpecification", Value(header->subSpecification), alloc);
+          message.AddMember("firstTForbit", Value(header->firstTForbit), alloc);
+          message.AddMember("tfCounter", Value(header->tfCounter), alloc);
+          message.AddMember("runNumber", Value(header->runNumber), alloc);
+          message.AddMember("payloadSize", Value(header->payloadSize), alloc);
+          message.AddMember("splitPayloadParts", Value(header->splitPayloadParts), alloc);
+          message.AddMember("payloadSerialization", Value(method.c_str(), alloc), alloc);
+          message.AddMember("payloadSplitIndex", Value(header->splitPayloadIndex), alloc);
+          message.AddMember("payloadBytes", Value(bytes.c_str(), alloc), alloc);
+          if (header->payloadSerializationMethod == header::gSerializationMethodROOT) {
+            std::unique_ptr<TObject> object = DataRefUtils::as<TObject>(ref);
+            TString json = TBufferJSON::ToJSON(object.get());
+            message.AddMember("payload", Value(json.Data(), alloc), alloc);
+          }
+        } else if (baseHeader->description == DataProcessingHeader::sHeaderType) {
+          const auto* header = header::get<DataProcessingHeader*>(baseHeader->data());
+          message.AddMember("startTime", Value(header->startTime), alloc);
+          message.AddMember("duration", Value(header->duration), alloc);
+          message.AddMember("creationTimer", Value(header->creation), alloc);
+        } else if (baseHeader->description == OutputObjHeader::sHeaderType) {
+          const auto* header = header::get<OutputObjHeader*>(baseHeader->data());
+          message.AddMember("taskHash", Value(header->mTaskHash), alloc);
+        }
+      }
+      StringBuffer buffer;
+      Writer<StringBuffer> writer(buffer);
+      message.Accept(writer);
+
+      socket->send(std::string{buffer.GetString(), buffer.GetSize()});
     }
   }
 
