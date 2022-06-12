@@ -30,6 +30,50 @@ using namespace rapidjson;
 
 constexpr char PROXY_ADDRESS[]{"ipc:///tmp/proxy"};
 
+struct DIPacket {
+  struct Header {
+    static const uint32_t HEADER_SIZE = 12;
+    enum class Type : uint32_t {
+      DATA = 1
+    };
+
+    char type[4];
+    char payloadSize[8];
+  };
+
+  Header header;
+  char* payload;
+};
+
+static void toLE(uint32_t n, char* le) {
+  le[0] = (uint8_t) n;
+  le[1] = (uint8_t) (n >> 8);
+  le[2] = (uint8_t) (n >> 16);
+  le[3] = (uint8_t) (n >> 24);
+}
+
+static void toLE(uint64_t n, char* le) {
+  le[0] = (uint8_t) n;
+  le[1] = (uint8_t) (n >> 8);
+  le[2] = (uint8_t) (n >> 16);
+  le[3] = (uint8_t) (n >> 24);
+  le[4] = (uint8_t) (n >> 32);
+  le[5] = (uint8_t) (n >> 40);
+  le[6] = (uint8_t) (n >> 48);
+  le[7] = (uint8_t) (n >> 56);
+}
+
+static DIPacket createPacket(DIPacket::Header::Type type, char* payload, uint64_t payloadSize) {
+  DIPacket packet{
+    .payload = payload
+  };
+
+  toLE((uint32_t) type, &(packet.header.type[0]));
+  toLE(payloadSize, &(packet.header.payloadSize[0]));
+
+  return packet;
+}
+
 class PushSocket
 {
  public:
@@ -48,8 +92,14 @@ class PushSocket
   {
     uint64_t size = message.size();
     LOG(info) << "PROXY - SEND " << size;
-    boost::asio::write(s, boost::asio::buffer(&size, 8));
-    boost::asio::write(s, boost::asio::buffer(message, size));
+
+    char payload[size];
+    std::memcpy(payload, message.c_str(), size);
+    auto packet = createPacket(DIPacket::Header::Type::DATA, payload, size);
+    boost::asio::write(s, boost::asio::buffer(&packet.header, DIPacket::Header::HEADER_SIZE));
+    boost::asio::write(s, boost::asio::buffer(packet.payload, size));
+
+    LOG(info) << "PROXY - SENT";
   }
 
 private:
