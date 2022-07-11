@@ -34,7 +34,8 @@ struct DIPacket {
   struct Header {
     static const uint32_t HEADER_SIZE = 12;
     enum class Type : uint32_t {
-      DATA = 1
+      DATA = 1,
+      REGISTER_DEVICE = 2
     };
 
     char type[4];
@@ -88,14 +89,14 @@ class PushSocket
     LOG(info) << "PROXY - DISCONNECT";
   }
 
-  void send(const std::string& message)
+  void send(const std::string& message, DIPacket::Header::Type payloadType = DIPacket::Header::Type::DATA)
   {
     uint64_t size = message.size();
     LOG(info) << "PROXY - SEND " << size;
 
     char payload[size];
     std::memcpy(payload, message.c_str(), size);
-    auto packet = createPacket(DIPacket::Header::Type::DATA, payload, size);
+    auto packet = createPacket(payloadType, payload, size);
     boost::asio::write(s, boost::asio::buffer(&packet.header, DIPacket::Header::HEADER_SIZE));
     boost::asio::write(s, boost::asio::buffer(packet.payload, size));
 
@@ -279,11 +280,21 @@ namespace o2::framework
   {
     DataProcessorSpec dataInspector{"DataInspector"};
 
-    auto pusher = std::make_shared<PushSocket>(PROXY_ADDRESS);
-    dataInspector.algorithm = AlgorithmSpec{
-      [p{pusher}](ProcessingContext &context) mutable {
+    dataInspector.algorithm = AlgorithmSpec{[&workflow](InitContext &context) -> AlgorithmSpec::ProcessCallback{
+      auto pusher = std::make_shared<PushSocket>(PROXY_ADDRESS);
+
+      //DI: REGISTER DEVICES
+      for (const DataProcessorSpec &device: workflow) {
+        if (isNonInternalDevice(device) && !isInspectorDevice(device)) {
+          pusher->send(device.name, DIPacket::Header::Type::REGISTER_DEVICE);
+        }
+      }
+
+      return [p{pusher}](ProcessingContext &context) mutable {
         sendToProxy(p, context);
-      }};
+      };
+    }};
+
     for (const DataProcessorSpec &device: workflow) {
       if (isNonInternalDevice(device)) {
         for (const OutputSpec &output: device.outputs) {
@@ -293,6 +304,7 @@ namespace o2::framework
         }
       }
     }
+
     workflow.emplace_back(std::move(dataInspector));
   }
 }
