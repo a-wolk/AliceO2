@@ -37,7 +37,11 @@ o2_add_library(Framework
                        src/ConfigContext.cxx
                        src/ControlService.cxx
                        src/ControlServiceHelpers.cxx
+<<<<<<< HEAD
                        src/ControlWebSocketHandler.cxx
+=======
+        src/DataInspectorService.cxx
+>>>>>>> 4b30b0d97 (DI | proxy receiver - prototype)
                        src/CCDBHelpers.cxx
                        src/DispatchPolicy.cxx
                        src/DataSender.cxx
