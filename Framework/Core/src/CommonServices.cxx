@@ -10,6 +10,7 @@
 // or submit itself to any jurisdiction.
 #include "Framework/CommonServices.h"
 #include "Framework/AsyncQueue.h"
+#include "Framework/DataInspectorService.h"
 #include "Framework/ParallelContext.h"
 #include "Framework/ControlService.h"
 #include "Framework/DriverClient.h"
@@ -904,6 +905,18 @@ o2::framework::ServiceSpec CommonServices::objectCache()
     .kind = ServiceKind::Serial};
 }
 
+o2::framework::ServiceSpec CommonServices::dataInspectorServiceSpec()
+{
+    return ServiceSpec{
+        .name = "data-inspector-service",
+        .init = [](ServiceRegistry& registry, DeviceState& state, fair::mq::ProgOptions& options) -> ServiceHandle {
+            auto* diService = new DataInspectorService("");
+            return ServiceHandle{TypeIdHelpers::uniqueId<DataInspectorService>(), diService};
+            },
+            .configure = noConfiguration(),
+            .kind = ServiceKind::Global};
+}
+
 std::vector<ServiceSpec> CommonServices::defaultServices(int numThreads)
 {
   std::vector<ServiceSpec> specs{
@@ -930,7 +943,8 @@ std::vector<ServiceSpec> CommonServices::defaultServices(int numThreads)
     ArrowSupport::arrowBackendSpec(),
     CommonMessageBackends::stringBackendSpec(),
     decongestionSpec(),
-    CommonMessageBackends::rawBufferBackendSpec()};
+    CommonMessageBackends::rawBufferBackendSpec(),
+    dataInspectorServiceSpec()};
 
   // I should make it optional depending wether the GUI is there or not...
   specs.push_back(CommonServices::guiMetricsSpec());

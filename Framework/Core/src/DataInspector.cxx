@@ -28,86 +28,6 @@
 
 using namespace rapidjson;
 
-constexpr char PROXY_ADDRESS[]{"ipc:///tmp/proxy"};
-
-struct DIPacket {
-  struct Header {
-    static const uint32_t HEADER_SIZE = 12;
-    enum class Type : uint32_t {
-      DATA = 1,
-      REGISTER_DEVICE = 2
-    };
-
-    char type[4];
-    char payloadSize[8];
-  };
-
-  Header header;
-  char* payload;
-};
-
-static void toLE(uint32_t n, char* le) {
-  le[0] = (uint8_t) n;
-  le[1] = (uint8_t) (n >> 8);
-  le[2] = (uint8_t) (n >> 16);
-  le[3] = (uint8_t) (n >> 24);
-}
-
-static void toLE(uint64_t n, char* le) {
-  le[0] = (uint8_t) n;
-  le[1] = (uint8_t) (n >> 8);
-  le[2] = (uint8_t) (n >> 16);
-  le[3] = (uint8_t) (n >> 24);
-  le[4] = (uint8_t) (n >> 32);
-  le[5] = (uint8_t) (n >> 40);
-  le[6] = (uint8_t) (n >> 48);
-  le[7] = (uint8_t) (n >> 56);
-}
-
-static DIPacket createPacket(DIPacket::Header::Type type, char* payload, uint64_t payloadSize) {
-  DIPacket packet{
-    .payload = payload
-  };
-
-  toLE((uint32_t) type, &(packet.header.type[0]));
-  toLE(payloadSize, &(packet.header.payloadSize[0]));
-
-  return packet;
-}
-
-class PushSocket
-{
- public:
-  PushSocket(const std::string& address)
-  {
-    LOG(info) << "PROXY - CONNECT" << address;
-    s.connect(boost::asio::ip::tcp::endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 8081));
-  }
-
-  ~PushSocket() noexcept
-  {
-    LOG(info) << "PROXY - DISCONNECT";
-  }
-
-  void send(const std::string& message, DIPacket::Header::Type payloadType = DIPacket::Header::Type::DATA)
-  {
-    uint64_t size = message.size();
-    LOG(info) << "PROXY - SEND " << size;
-
-    char payload[size];
-    std::memcpy(payload, message.c_str(), size);
-    auto packet = createPacket(payloadType, payload, size);
-    boost::asio::write(s, boost::asio::buffer(&packet.header, DIPacket::Header::HEADER_SIZE));
-    boost::asio::write(s, boost::asio::buffer(packet.payload, size));
-
-    LOG(info) << "PROXY - SENT";
-  }
-
-private:
-    boost::asio::io_context io_context;
-    boost::asio::ip::tcp::socket s{io_context};
-};
-
 /* Converts the `data` input a string of bytes as two hexadecimal numbers. Adds
    a 128 offset to deal with negative values. */
 template <typename T>
@@ -195,7 +115,7 @@ namespace o2::framework
 
   /* Callback which transforms each `DataRef` in `context` to a JSON object and
   sends it on the `socket`. The messages are sent separately. */
-  static void sendToProxy(std::shared_ptr<PushSocket> socket, ProcessingContext& context)
+  static void sendToProxy(std::shared_ptr<DISocket> socket, ProcessingContext& context)
   {
     DeviceSpec device = context.services().get<RawDeviceService>().spec();
     for (const DataRef& ref : context.inputs()) {
@@ -245,7 +165,7 @@ namespace o2::framework
       Writer<StringBuffer> writer(buffer);
       message.Accept(writer);
 
-      socket->send(std::string{buffer.GetString(), buffer.GetSize()});
+      socket->send(DIMessage{DIMessage::Header::Type::DATA, std::string{buffer.GetString(), buffer.GetSize()}});
     }
   }
 
@@ -276,22 +196,21 @@ namespace o2::framework
       output.matcher);
   }
 
-  void addDataInspector(WorkflowSpec &workflow)
-  {
+  void addDataInspector(WorkflowSpec &workflow) {
     DataProcessorSpec dataInspector{"DataInspector"};
 
     dataInspector.algorithm = AlgorithmSpec{[&workflow](InitContext &context) -> AlgorithmSpec::ProcessCallback{
-      auto pusher = std::make_shared<PushSocket>(PROXY_ADDRESS);
+      auto socket = std::make_shared<DISocket>(DISocket::connect("127.0.0.1", 8081));
 
       //DI: REGISTER DEVICES
       for (const DataProcessorSpec &device: workflow) {
         if (isNonInternalDevice(device) && !isInspectorDevice(device)) {
-          pusher->send(device.name, DIPacket::Header::Type::REGISTER_DEVICE);
+          socket->send(DIMessage{DIMessage::Header::Type::REGISTER_DEVICE, device.name});
         }
       }
 
-      return [p{pusher}](ProcessingContext &context) mutable {
-        sendToProxy(p, context);
+      return [s{socket}](ProcessingContext &context) mutable {
+        sendToProxy(s, context);
       };
     }};
 
