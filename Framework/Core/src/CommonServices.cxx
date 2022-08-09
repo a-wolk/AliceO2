@@ -910,11 +910,12 @@ o2::framework::ServiceSpec CommonServices::dataInspectorServiceSpec()
     return ServiceSpec{
         .name = "data-inspector-service",
         .init = [](ServiceRegistry& registry, DeviceState& state, fair::mq::ProgOptions& options) -> ServiceHandle {
-            auto* diService = new DataInspectorService("");
+            auto* diService = new DataInspectorService();
             return ServiceHandle{TypeIdHelpers::uniqueId<DataInspectorService>(), diService};
-            },
-            .configure = noConfiguration(),
-            .kind = ServiceKind::Global};
+        },
+        .configure = noConfiguration(),
+        .kind = ServiceKind::Global
+    };
 }
 
 std::vector<ServiceSpec> CommonServices::defaultServices(int numThreads)
