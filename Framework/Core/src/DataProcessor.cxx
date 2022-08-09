@@ -58,10 +58,6 @@ void DataProcessor::doSend(DataSender& sender, MessageContext& context, ServiceR
       continue;
     }
 
-    auto device = services.get<RawDeviceService>().device();
-    if(isDataInspectorActive(*device)){
-        sendCopyToDataInspector(*device, parts, 0);
-    }
     sender.send(parts, {ci});
   }
 }
@@ -83,10 +79,6 @@ void DataProcessor::doSend(DataSender& sender, StringContext& context, ServiceRe
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
 
-    auto device = services.get<RawDeviceService>().device();
-    if(isDataInspectorActive(*device)){
-        sendCopyToDataInspector(*device, parts, 0);
-    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
 }
@@ -129,10 +121,6 @@ void DataProcessor::doSend(DataSender& sender, ArrowContext& context, ServiceReg
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
 
-    auto device = registry.get<RawDeviceService>().device();
-    if(isDataInspectorActive(*device)){
-        sendCopyToDataInspector(*device, parts, 0);
-    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
   static int64_t previousBytesSent = 0;
@@ -183,10 +171,6 @@ void DataProcessor::doSend(DataSender& sender, RawBufferContext& context, Servic
     parts.AddPart(std::move(messageRef.header));
     parts.AddPart(std::move(payload));
 
-    auto device = registry.get<RawDeviceService>().device();
-    if(isDataInspectorActive(*device)){
-        sendCopyToDataInspector(*device, parts, 0);
-    }
     sender.send(parts, proxy.getOutputChannelIndex(messageRef.routeIndex));
   }
 }

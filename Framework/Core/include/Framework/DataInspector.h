@@ -36,7 +36,7 @@ bool isDataInspectorActive(FairMQDevice& device);
 
 /* Copies `parts` and sends it to the `device`. The copy is necessary because of
  * memory management. */
-void sendCopyToDataInspector(FairMQDevice& device, FairMQParts& parts, unsigned index);
+void sendCopyToDataInspector(FairMQDeviceProxy* proxy, FairMQParts& parts, ChannelIndex channelIndex);
 
 /* Creates an O2 Device for the DataInspector and adds it to `workflow`. */
 void addDataInspector(WorkflowSpec& workflow);

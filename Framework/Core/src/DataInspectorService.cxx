@@ -2,7 +2,7 @@
 
 namespace o2::framework
 {
-DataInspectorService::DataInspectorService(const std::string &deviceName) : socket(DISocket::connect("127.0.0.1", 8081)), deviceName(deviceName) {}
+DataInspectorService::DataInspectorService() : socket(DISocket::connect("127.0.0.1", 8081)) {}
 
 void DataInspectorService::receive()
 {

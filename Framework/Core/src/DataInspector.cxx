@@ -85,15 +85,10 @@ namespace o2::framework
     return partsCopy;
   }
 
-  void sendCopyToDataInspector(FairMQDevice &device, FairMQParts &parts, unsigned index)
+  void sendCopyToDataInspector(FairMQDeviceProxy* proxy, FairMQParts& parts, ChannelIndex channelIndex)
   {
-    for (const auto &[name, channels]: device.fChannels) {
-      if (name.find("to_DataInspector") != std::string::npos) {
-        FairMQParts copy = copyMessage(parts);
-        device.Send(copy, name, index);
-        return;
-      }
-    }
+    auto copy = copyMessage(parts);
+    proxy->getOutputChannel(channelIndex)->Send(copy);
   }
 
   /* Returns the name of an O2 device which is the source of a route in `routes`
