@@ -1642,6 +1642,12 @@ int runStateMachine(DataProcessorSpecs const& workflow,
                 }
               };
             }
+
+            auto& oldProcAlg = device.algorithm.onProcess;
+            device.algorithm.onProcess = [oldProcAlg](ProcessingContext& context) -> void{
+              context.services().get<DataInspectorService>().receive();
+              oldProcAlg(context);
+            };
           } else {
             LOG(info) << "NO INSPECTOR";
           }
