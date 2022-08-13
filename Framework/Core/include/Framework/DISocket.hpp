@@ -49,9 +49,10 @@ struct DIMessage {
   struct Header {
     enum class Type : uint32_t {
       DATA = 1,
-      REGISTER_DEVICE = 2,
-      INSPECT_ON = 3,
-      INSPECT_OFF = 4
+      DEVICE_ON = 2,
+      DEVICE_OFF = 3,
+      INSPECT_ON = 4,
+      INSPECT_OFF = 5
     };
 
     Header(Type type, uint64_t payloadSize) : type(type), payloadSize(payloadSize) {}

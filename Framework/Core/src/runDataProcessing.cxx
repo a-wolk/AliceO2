@@ -1615,7 +1615,7 @@ int runStateMachine(DataProcessorSpecs const& workflow,
           if(varmap.count("inspector")) {
             LOG(info) << "INSPECTOR POLICY";
             for(auto& device : runningWorkflow.devices) {
-              if(device.name.find("internal") != std::string::npos || device.name == "DataInspector")
+              if (device.name.find("internal") != std::string::npos || device.name == "DataInspector")
                 continue;
 
               auto& oldPolicy = device.sendingPolicy;
@@ -1624,23 +1624,17 @@ int runStateMachine(DataProcessorSpecs const& workflow,
                 nullptr,
                 [oldPolicy, &serviceRegistry](FairMQDeviceProxy& proxy, FairMQParts& parts, ChannelIndex channelIndex) -> void{
                   auto& diService = serviceRegistry.get<DataInspectorService>();
-
-                  if(diService.isInspected()) {
-                    if(!diService.isDataInspectorChannelSet()){
-                      int i=0;
-                      for(;i<proxy.getNumOutputChannels(); i++){
-                        if(proxy.getOutputChannel(ChannelIndex{i})->GetName().find("to_DataInspector") != std::string::npos)
-                          break;
-                      }
-                      diService.setDataInspectorChannel(ChannelIndex{i});
-                    }
-
-                    LOG(info) << "SEND COPY";
-                    sendCopyToDataInspector(&proxy, parts, diService.getDataInspectorChannel());
-                  }
+                  if(diService.isInspected())
+                    sendCopyToDataInspector(&proxy, parts, diService.getDataInspectorChannelIndex());
 
                   oldPolicy.send(proxy, parts, channelIndex);
                 }
+              };
+
+              auto& oldProcAlg = device.algorithm.onProcess;
+              device.algorithm.onProcess = [oldProcAlg](ProcessingContext& context) -> void {
+                context.services().get<DataInspectorService>().receive();
+                oldProcAlg(context);
               };
             }
           } else {

@@ -907,15 +907,30 @@ o2::framework::ServiceSpec CommonServices::objectCache()
 
 o2::framework::ServiceSpec CommonServices::dataInspectorServiceSpec()
 {
-    return ServiceSpec{
-        .name = "data-inspector-service",
-        .init = [](ServiceRegistry& registry, DeviceState& state, fair::mq::ProgOptions& options) -> ServiceHandle {
-            auto* diService = new DataInspectorService();
-            return ServiceHandle{TypeIdHelpers::uniqueId<DataInspectorService>(), diService};
-        },
-        .configure = noConfiguration(),
-        .kind = ServiceKind::Global
-    };
+  return ServiceSpec{
+    .name = "data-inspector-service",
+    .init = [](ServiceRegistry& registry, DeviceState& state, fair::mq::ProgOptions& options) -> ServiceHandle {
+      const auto& deviceName = registry.get<DeviceSpec const>().name;
+      const auto& outputs = registry.get<DeviceSpec const>().outputs;
+
+      DataInspectorService* diService = nullptr;
+      if(deviceName == "DataInspector") {
+        diService = new DataInspectorService(deviceName);
+      } else {
+        int i=0;
+        for(;i<outputs.size(); i++){
+          if(outputs[i].channel.find("to_DataInspector") != std::string::npos)
+            break;
+        }
+
+        diService = new DataInspectorService(deviceName, ChannelIndex{i});
+      }
+
+      return ServiceHandle{TypeIdHelpers::uniqueId<DataInspectorService>(), diService};
+    },
+    .configure = noConfiguration(),
+    .kind = ServiceKind::Global
+  };
 }
 
 std::vector<ServiceSpec> CommonServices::defaultServices(int numThreads)

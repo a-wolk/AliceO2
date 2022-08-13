@@ -25,6 +25,9 @@
 #include <rapidjson/prettywriter.h>
 #include "boost/asio.hpp"
 #include <TBufferJSON.h>
+#include <boost/algorithm/string/join.hpp>
+#include "Framework/DISocket.hpp"
+#include "Framework/DataInspectorService.h"
 
 using namespace rapidjson;
 
@@ -110,8 +113,10 @@ namespace o2::framework
 
   /* Callback which transforms each `DataRef` in `context` to a JSON object and
   sends it on the `socket`. The messages are sent separately. */
-  static void sendToProxy(std::shared_ptr<DISocket> socket, ProcessingContext& context)
+  static void sendToProxy(ProcessingContext& context)
   {
+    auto& socket = context.services().get<DataInspectorService>();
+
     DeviceSpec device = context.services().get<RawDeviceService>().spec();
     for (const DataRef& ref : context.inputs()) {
       Document message;
@@ -160,7 +165,7 @@ namespace o2::framework
       Writer<StringBuffer> writer(buffer);
       message.Accept(writer);
 
-      socket->send(DIMessage{DIMessage::Header::Type::DATA, std::string{buffer.GetString(), buffer.GetSize()}});
+      socket.send(DIMessage{DIMessage::Header::Type::DATA, std::string{buffer.GetString(), buffer.GetSize()}});
     }
   }
 
@@ -195,17 +200,8 @@ namespace o2::framework
     DataProcessorSpec dataInspector{"DataInspector"};
 
     dataInspector.algorithm = AlgorithmSpec{[&workflow](InitContext &context) -> AlgorithmSpec::ProcessCallback{
-      auto socket = std::make_shared<DISocket>(DISocket::connect("127.0.0.1", 8081));
-
-      //DI: REGISTER DEVICES
-      for (const DataProcessorSpec &device: workflow) {
-        if (isNonInternalDevice(device) && !isInspectorDevice(device)) {
-          socket->send(DIMessage{DIMessage::Header::Type::REGISTER_DEVICE, device.name});
-        }
-      }
-
-      return [s{socket}](ProcessingContext &context) mutable {
-        sendToProxy(s, context);
+      return [](ProcessingContext &context) mutable {
+        sendToProxy(context);
       };
     }};
 
