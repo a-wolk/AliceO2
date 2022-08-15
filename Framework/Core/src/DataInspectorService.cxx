@@ -2,7 +2,16 @@
 
 namespace o2::framework
 {
-DataInspectorService::DataInspectorService() : socket(DISocket::connect("127.0.0.1", 8081)) {}
+DataInspectorService::DataInspectorService(const std::string& deviceName, ChannelIndex dataInspectorChannelIndex) : deviceName(deviceName), dataInspectorChannelIndex(dataInspectorChannelIndex), socket(DISocket::connect("127.0.0.1", 8081))
+{
+  socket.send(DIMessage{DIMessage::Header::Type::DEVICE_ON, deviceName});
+}
+
+DataInspectorService::~DataInspectorService()
+{
+  socket.send(DIMessage{DIMessage::Header::Type::DEVICE_OFF, deviceName});
+  socket.close();
+}
 
 void DataInspectorService::receive()
 {
@@ -10,6 +19,11 @@ void DataInspectorService::receive()
     DIMessage msg = socket.receive();
     handleMessage(msg);
   }
+}
+
+void DataInspectorService::send(const DIMessage& msg)
+{
+  socket.send(msg);
 }
 
 void DataInspectorService::handleMessage(DIMessage &msg)

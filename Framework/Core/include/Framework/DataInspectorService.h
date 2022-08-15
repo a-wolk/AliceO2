@@ -9,25 +9,22 @@ namespace o2::framework
 {
 class DataInspectorService {
  public:
-  DataInspectorService();
+  DataInspectorService(const std::string& deviceName) : DataInspectorService(deviceName, ChannelIndex{-1}) {}
+  DataInspectorService(const std::string& deviceName, ChannelIndex dataInspectorChannelIndex);
+  ~DataInspectorService();
 
   void receive();
+  void send(const DIMessage& message);
   bool isInspected() { return _isInspected; }
-  ChannelIndex getDataInspectorChannel() { return dataInspectorChannelIndex; }
-  bool isDataInspectorChannelSet() { return isDataInspectorChannelIndexSet; }
-  void setDataInspectorChannel(ChannelIndex dataInspectorChannelIndex) {
-    this->dataInspectorChannelIndex = dataInspectorChannelIndex;
-    this->isDataInspectorChannelIndexSet = true;
-  }
+  ChannelIndex getDataInspectorChannelIndex() { return dataInspectorChannelIndex; }
 
  private:
   void handleMessage(DIMessage& msg);
 
   const std::string deviceName;
-  bool _isInspected = true;
+  bool _isInspected = false;
   DISocket socket;
 
-  bool isDataInspectorChannelIndexSet = false;
   ChannelIndex dataInspectorChannelIndex;
 };
 }
