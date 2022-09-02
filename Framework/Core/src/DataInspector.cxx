@@ -31,23 +31,6 @@
 
 using namespace rapidjson;
 
-/* Converts the `data` input a string of bytes as two hexadecimal numbers. Adds
-   a 128 offset to deal with negative values. */
-template <typename T>
-static std::string asBytes(const T* data, uint32_t length)
-{
-    if (length == 0) {
-        return "";
-    }
-    std::stringstream buffer;
-    buffer << std::hex << std::setfill('0')
-           << std::setw(2) << static_cast<unsigned>(data[0] + 128);
-    for (uint32_t i = 1; i < length; i++) {
-        buffer << ' ' << std::setw(2) << static_cast<unsigned>(data[i] + 128);
-    }
-    return buffer.str();
-}
-
 /* Replaces (in place) all occurences of `pattern` in `data` with `substitute`.
    `substitute` may be wider than `pattern`. */
 static void replaceAll(
@@ -133,7 +116,6 @@ namespace o2::framework
           std::string origin = header->dataOrigin.as<std::string>();
           std::string description = header->dataDescription.as<std::string>();
           std::string method = header->payloadSerializationMethod.as<std::string>();
-          std::string bytes = asBytes(ref.payload, header->payloadSize);
 
           message.AddMember("origin", Value(origin.c_str(), alloc), alloc);
           message.AddMember("description", Value(description.c_str(), alloc), alloc);
@@ -145,7 +127,6 @@ namespace o2::framework
           message.AddMember("splitPayloadParts", Value(header->splitPayloadParts), alloc);
           message.AddMember("payloadSerialization", Value(method.c_str(), alloc), alloc);
           message.AddMember("payloadSplitIndex", Value(header->splitPayloadIndex), alloc);
-          message.AddMember("payloadBytes", Value(bytes.c_str(), alloc), alloc);
           if (header->payloadSerializationMethod == header::gSerializationMethodROOT) {
             std::unique_ptr<TObject> object = DataRefUtils::as<TObject>(ref);
             TString json = TBufferJSON::ToJSON(object.get());
