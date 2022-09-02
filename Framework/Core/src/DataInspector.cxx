@@ -132,6 +132,11 @@ namespace o2::framework
             TString json = TBufferJSON::ToJSON(object.get());
             message.AddMember("payload", Value(json.Data(), alloc), alloc);
           }
+          else if(header->payloadSerializationMethod == header::gSerializationMethodArrow){
+            TableConsumer cons = TableConsumer(reinterpret_cast<const uint8_t* >(ref.payload), header->payloadSize);
+            auto table = cons.asArrowTable();
+            message.AddMember("payload", Value(table->ToString().c_str(), alloc), alloc);
+          }
         } else if (baseHeader->description == DataProcessingHeader::sHeaderType) {
           const auto* header = header::get<DataProcessingHeader*>(baseHeader->data());
           message.AddMember("startTime", Value(header->startTime), alloc);
